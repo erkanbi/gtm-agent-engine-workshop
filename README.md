@@ -241,7 +241,7 @@ All the risk was retired in Test, so this is short:
 1. **Merge the PR** into `main`.
 2. **Confirm the fix landed** — read the send path on `main` and check the guard is there: the
    agent looks up the lead's disqualified status before sending, and refuses even when the rep
-   asks directly.
+   asks directly, unless the rep explicitly confirms an override after being told the prospect is disqualified.
 3. **Pull it down** so your working copy isn't stale (you need it for Monitor):
 
 ```bash
