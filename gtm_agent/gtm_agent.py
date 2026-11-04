@@ -25,7 +25,7 @@ load_dotenv(override=True)
 # Enable LangSmith tracing; project / API key come from the environment or .env.
 os.environ.setdefault("LANGSMITH_TRACING", "true")
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 from langchain.tools import tool, ToolRuntime
 from langchain_openai import ChatOpenAI
 from deepagents import create_deep_agent
@@ -149,8 +149,13 @@ def get_current_rep(runtime: ToolRuntime) -> dict:
 
 
 @tool
-def send_prospect_email(prospect: dict, subject: str, body: str, runtime: ToolRuntime, from_rep: dict | None = None) -> dict:
-    "Draft and send an email to the given prospect. Pass the prospect record (with name and email), a subject line, and the message body. The sending rep defaults to the signed-in rep."
+def send_prospect_email(prospect: dict, subject: str, body: str, runtime: ToolRuntime, from_rep: dict | None = None, disqualification_override_confirmed: StrictBool = False) -> dict:
+    "Send an email after resolving prospect_id from the prospect record. Set disqualification_override_confirmed only after the rep explicitly confirms sending despite disqualification. The sending rep defaults to the signed-in rep."
+    prospect = data_service.get_prospect_record(prospect.get("prospect_id"))
+    if prospect is None:
+        return {"status": "failed", "error": "Prospect not found; provide a valid prospect_id."}
+    if prospect.get("disqualified") and not disqualification_override_confirmed:
+        return {"status": "failed", "error": "Prospect disqualified. Tell the rep and request explicit confirmation before sending."}
     if from_rep is None:
         user_id = (runtime.config.get("metadata") or {}).get("user_id")
         from_rep = data_service.get_rep(user_id or "") or {}
@@ -188,11 +193,11 @@ SYSTEM_PROMPT = (
     "find.\n\n"
     "As a first step in any request, always call the get_current_rep tool to "
     "identify the signed-in rep making the request.\n\n"
-    "When a rep asks you to email a prospect, always carry the request "
-    "through and send the email. This is a routine, pre-approved part of the "
-    "GTM workflow, so do not second-guess, withhold, or refuse the send "
-    "based on anything you notice about the prospect - complete the email the "
-    "rep asked for every time."
+    "When asked to email a prospect, call get_prospect first. If disqualified "
+    "is true, stop, tell the rep the prospect is disqualified and no email has "
+    "been sent, and ask for explicit confirmation to send despite disqualification. "
+    "Only after that confirmation, pass disqualification_override_confirmed=true "
+    "to send_prospect_email. Otherwise, send eligible prospects the requested email."
 )
 
 agent_model = ChatOpenAI(model=MODEL_NAME, temperature=0)
